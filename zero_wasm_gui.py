@@ -1,125 +1,171 @@
-import customtkinter as ctk
-import threading
-import time
-import math
-import socket
-import urllib.request
-import json
-import sqlite3
-import random
+import sys
+import gi
+import os
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib, Pango
 
-ctk.set_appearance_mode("dark")
-
-class App(ctk.CTk):
+class ZeroWasm(Gtk.Window):
     def __init__(self):
-        super().__init__()
-        self.title("Zero Wasm Console")
-        self.geometry("1100x750")
+        super().__init__(title="Zero Wasm - Ultimate Studio")
+        self.set_default_size(1100, 750)
         
-        # Premium Enterprise Color Palette
-        self.bg_color = "#0B0C10"          # Deep rich black/gray
-        self.sidebar_color = "#1F2833"     # Slate gray sidebar
-        self.accent_color = "#66FCF1"      # Neon cyan accent
-        self.text_primary = "#FFFFFF"      # Crisp white
-        self.text_secondary = "#C5C6C7"    # Soft gray text
-        self.panel_bg = "#161920"          # Slightly raised panel
+        self.header = Gtk.HeaderBar()
+        self.header.set_show_close_button(True)
+        self.header.props.title = ""
+        self.header.get_style_context().add_class("hidden-header")
+        self.set_titlebar(self.header)
         
-        self.configure(fg_color=self.bg_color)
+        self.setup_css()
         
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+        main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.add(main_box)
         
-        # Sidebar Navigation
-        self.sidebar = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=self.sidebar_color)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(5, weight=1)
+        # ================= SIDEBAR =================
+        self.sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.sidebar.set_size_request(280, -1)
+        self.sidebar.get_style_context().add_class("sidebar")
+        main_box.pack_start(self.sidebar, False, False, 0)
         
-        # Branding
-        self.logo_label = ctk.CTkLabel(self.sidebar, text="WASM", font=ctk.CTkFont("Segoe UI", size=26, weight="bold"), text_color=self.accent_color)
-        self.logo_label.grid(row=0, column=0, padx=25, pady=(35, 5), sticky="w")
+        logo = Gtk.Label(label="Z E R O W A S M")
+        logo.get_style_context().add_class("sidebar-logo")
+        logo.set_margin_top(20)
+        logo.set_margin_bottom(20)
+        self.sidebar.pack_start(logo, False, False, 0)
         
-        self.version_label = ctk.CTkLabel(self.sidebar, text="Enterprise Edition v8.5", font=ctk.CTkFont("Segoe UI", size=12), text_color=self.text_secondary)
-        self.version_label.grid(row=1, column=0, padx=25, pady=(0, 35), sticky="w")
+        btn_deploy = Gtk.Button(label="🚀 Deploy Module")
+        btn_deploy.get_style_context().add_class("action-btn")
+        self.sidebar.pack_start(btn_deploy, False, False, 10)
         
-        # Nav Buttons
-        self.btn_dash = ctk.CTkButton(self.sidebar, text="  Overview", font=ctk.CTkFont("Segoe UI", size=14, weight="bold"), fg_color=self.panel_bg, text_color=self.text_primary, anchor="w", hover_color=self.accent_color)
-        self.btn_dash.grid(row=2, column=0, padx=15, pady=8, sticky="ew")
+        lbl_mods = Gtk.Label(label="RUNNING MODULES")
+        lbl_mods.get_style_context().add_class("section-label")
+        lbl_mods.set_halign(Gtk.Align.START)
+        lbl_mods.set_margin_start(20)
+        lbl_mods.set_margin_top(15)
+        self.sidebar.pack_start(lbl_mods, False, False, 10)
         
-        self.btn_set = ctk.CTkButton(self.sidebar, text="  Configuration", font=ctk.CTkFont("Segoe UI", size=14), fg_color="transparent", text_color=self.text_secondary, anchor="w", hover_color=self.panel_bg)
-        self.btn_set.grid(row=3, column=0, padx=15, pady=8, sticky="ew")
+        modules = [
+            ("Video Encoder", "🟢 14MB"),
+            ("Rust Physics Engine", "🟢 2.3MB"),
+            ("Data Parser", "🟢 0.8MB"),
+            ("Crypto Miner", "🔴 Stopped")
+        ]
         
-        self.btn_logs = ctk.CTkButton(self.sidebar, text="  Diagnostics", font=ctk.CTkFont("Segoe UI", size=14), fg_color="transparent", text_color=self.text_secondary, anchor="w", hover_color=self.panel_bg)
-        self.btn_logs.grid(row=4, column=0, padx=15, pady=8, sticky="ew")
+        for name, mem in modules:
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            box.set_margin_start(20)
+            box.set_margin_end(20)
+            box.set_margin_bottom(12)
+            
+            ln = Gtk.Label(label=name)
+            ln.get_style_context().add_class("mod-name")
+            lp = Gtk.Label(label=mem)
+            lp.get_style_context().add_class("mod-mem")
+            
+            box.pack_start(ln, True, True, 0)
+            box.pack_end(lp, False, False, 0)
+            self.sidebar.pack_start(box, False, False, 0)
+            
+        # ================= WORKSPACE =================
+        self.workspace = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.workspace.get_style_context().add_class("workspace")
+        main_box.pack_start(self.workspace, True, True, 0)
         
-        # Main Work Area
-        self.main_view = ctk.CTkFrame(self, fg_color=self.bg_color, corner_radius=0)
-        self.main_view.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+        top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        top_bar.set_margin_start(30)
+        top_bar.set_margin_end(30)
+        top_bar.set_margin_top(20)
         
-        self.header = ctk.CTkLabel(self.main_view, text="Zero Wasm Console", font=ctk.CTkFont("Segoe UI", size=32, weight="bold"), text_color=self.text_primary)
-        self.header.pack(anchor="w", pady=(0, 20))
+        title = Gtk.Label(label="Runtime Telemetry")
+        title.get_style_context().add_class("dash-title")
+        top_bar.pack_start(title, False, False, 0)
+        self.workspace.pack_start(top_bar, False, False, 20)
         
-        # Premium Content Glass Panel
-        self.main_frame = ctk.CTkFrame(self.main_view, fg_color=self.panel_bg, corner_radius=15, border_width=1, border_color="#2A2F3A")
-        self.main_frame.pack(fill=ctk.BOTH, expand=True)
+        grid = Gtk.Grid(column_spacing=20, row_spacing=20)
+        grid.set_margin_start(30)
+        grid.set_margin_end(30)
+        self.workspace.pack_start(grid, False, False, 0)
         
-        self.setup_ui()
+        grid.attach(self.make_stat_card("CPU Usage", "4.2%"), 0, 0, 1, 1)
+        grid.attach(self.make_stat_card("Memory Allocation", "17.1 MB"), 1, 0, 1, 1)
         
-    
-    def setup_ui(self):
-        # Service Status Top Bar
-        status_bar = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        status_bar.pack(fill=ctk.X, padx=25, pady=25)
+        # Terminal Console
+        console_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        console_box.get_style_context().add_class("console-box")
+        console_box.set_margin_start(30)
+        console_box.set_margin_end(30)
+        console_box.set_margin_top(20)
+        console_box.set_margin_bottom(30)
         
-        self.status_indicator = ctk.CTkLabel(status_bar, text="● OFFLINE", font=ctk.CTkFont(size=16, weight="bold"), text_color="#FF453A")
-        self.status_indicator.pack(side=ctk.LEFT)
+        c_title = Gtk.Label(label="WASM VM LOGS")
+        c_title.get_style_context().add_class("console-title")
+        c_title.set_halign(Gtk.Align.START)
+        c_title.set_margin_start(20)
+        c_title.set_margin_top(15)
         
-        self.uptime_label = ctk.CTkLabel(status_bar, text="System Uptime: 00:00:00", font=ctk.CTkFont(size=14), text_color=self.text_secondary)
-        self.uptime_label.pack(side=ctk.RIGHT)
+        c_text = Gtk.TextView()
+        c_text.get_style_context().add_class("console-text")
+        c_text.set_margin_start(20)
+        c_text.set_margin_end(20)
+        c_text.set_margin_top(10)
+        c_text.set_margin_bottom(20)
+        c_text.set_editable(False)
+        c_text.get_buffer().set_text(
+            "[INFO] Initializing WebAssembly V8 Engine... OK\n"
+            "[INFO] Sandbox memory allocated: 1024 MB\n"
+            "[INFO] Module 'Video Encoder' loaded successfully.\n"
+            "[WARN] 'Crypto Miner' hit execution timeout, aborting thread.\n"
+            "[INFO] Waiting for RPC calls..."
+        )
         
-        # Log terminal
-        self.log = ctk.CTkTextbox(self.main_frame, font=ctk.CTkFont("Consolas", 14), fg_color="#08090C", text_color="#45A29E", corner_radius=10, border_width=1, border_color="#1F2833")
-        self.log.pack(fill=ctk.BOTH, expand=True, padx=25, pady=(0, 25))
-        self.log.insert("0.0", "Enterprise subsystem initialized. Awaiting user command parameters...\n")
+        console_box.pack_start(c_title, False, False, 0)
+        console_box.pack_start(c_text, True, True, 0)
+        self.workspace.pack_start(console_box, True, True, 0)
         
-        # Control Buttons
-        btn_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        btn_frame.pack(fill=ctk.X, padx=25, pady=(0, 25))
+    def make_stat_card(self, title, val):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.get_style_context().add_class("stat-card")
+        box.set_size_request(380, 150)
         
-        self.start_btn = ctk.CTkButton(btn_frame, text="▶ Initialize Engine", font=ctk.CTkFont(size=16, weight="bold"), height=45, corner_radius=8, fg_color=self.accent_color, hover_color="#45A29E", text_color="#000000", command=self.start)
-        self.start_btn.pack(side=ctk.LEFT, expand=True, padx=10)
+        lt = Gtk.Label(label=title)
+        lt.get_style_context().add_class("stat-title")
+        lt.set_margin_top(20)
         
-        self.stop_btn = ctk.CTkButton(btn_frame, text="■ Terminate Process", font=ctk.CTkFont(size=16, weight="bold"), height=45, corner_radius=8, fg_color="#FF453A", hover_color="#DC3545", text_color="#FFFFFF", state="disabled", command=self.stop)
-        self.stop_btn.pack(side=ctk.LEFT, expand=True, padx=10)
+        lv = Gtk.Label(label=val)
+        lv.get_style_context().add_class("stat-val")
+        lv.set_margin_top(15)
         
-        self.running = False
+        box.pack_start(lt, False, False, 0)
+        box.pack_start(lv, False, False, 0)
+        return box
         
-    def start(self):
-        if self.running: return
-        self.running = True
-        self.status_indicator.configure(text="● ONLINE (SECURE)", text_color=self.accent_color)
-        self.start_btn.configure(state="disabled", fg_color="#1F2833", text_color=self.text_secondary)
-        self.stop_btn.configure(state="normal", fg_color="#FF453A", text_color="#FFFFFF")
-        self.log.insert("end", "\n[+] Booting enterprise kernel modules...\n[+] Establishing 256-bit encrypted socket channels...")
-        threading.Thread(target=self.run_service, daemon=True).start()
-        
-    def stop(self):
-        self.running = False
-        self.status_indicator.configure(text="● OFFLINE", text_color="#FF453A")
-        self.start_btn.configure(state="normal", fg_color=self.accent_color, text_color="#000000")
-        self.stop_btn.configure(state="disabled", fg_color="#1F2833", text_color=self.text_secondary)
-        self.log.insert("end", "\n[-] Graceful shutdown sequence initiated...\n[-] Service halted securely.")
-        self.log.see("end")
-        
-    def run_service(self):
-        counter = 0
-        while self.running:
-            time.sleep(1.2)
-            counter += 1
-            if self.running:
-                self.log.insert("end", f"\n[TICK] Core sync optimal. Node throughput: {random.randint(100, 999)} ops/s | Cycles: {counter}")
-                self.log.see("end")
-
+    def setup_css(self):
+        css = b'''
+            window { background-color: #030305; }
+            .hidden-header { background: #030305; min-height: 0px; padding: 0px; border: none; box-shadow: none; }
+            .sidebar { background-color: rgba(6, 8, 12, 0.98); border-right: 1px solid rgba(255, 255, 255, 0.05); }
+            .sidebar-logo { color: #FFFFFF; font-size: 22px; font-weight: 900; letter-spacing: 5px; text-shadow: 0 0 15px rgba(255, 51, 0, 0.6); }
+            .action-btn { background: linear-gradient(45deg, #FF3300, #FF6600); color: #FFFFFF; border-radius: 12px; font-weight: bold; padding: 15px; margin: 0 20px; border: none; box-shadow: 0 5px 20px rgba(255, 51, 0, 0.3); transition: all 0.3s; }
+            .action-btn:hover { box-shadow: 0 8px 30px rgba(255, 51, 0, 0.5); transform: scale(1.02); }
+            .section-label { color: #4A5568; font-size: 11px; font-weight: 900; letter-spacing: 2px; }
+            .mod-name { color: #FFFFFF; font-weight: bold; font-size: 14px; }
+            .mod-mem { color: #8B94A5; font-size: 14px; }
+            .workspace { background: radial-gradient(circle at bottom, #1A0A0A, #030305); }
+            .dash-title { color: #FFFFFF; font-size: 32px; font-weight: bold; }
+            .stat-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255, 51, 0, 0.2); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: all 0.3s ease; }
+            .stat-card:hover { border: 1px solid #FF3300; box-shadow: 0 15px 40px rgba(255, 51, 0, 0.2); transform: translateY(-3px); }
+            .stat-title { color: #8B94A5; font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+            .stat-val { color: #FF3300; font-size: 48px; font-weight: 200; text-shadow: 0 0 20px rgba(255, 51, 0, 0.4); }
+            .console-box { background: rgba(0,0,0,0.8); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; }
+            .console-title { color: #4A5568; font-size: 12px; font-weight: bold; letter-spacing: 2px; }
+            .console-text { background: transparent; color: #FF6600; font-family: monospace; font-size: 14px; line-height: 1.5; }
+            .console-text text { background: transparent; }
+        '''
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    win = ZeroWasm()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
